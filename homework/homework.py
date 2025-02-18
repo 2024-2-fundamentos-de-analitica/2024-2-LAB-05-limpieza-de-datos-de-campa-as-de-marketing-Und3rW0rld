@@ -1,9 +1,6 @@
-"""
-Escriba el codigo que ejecute la accion solicitada.
-"""
-
-# pylint: disable=import-outside-toplevel
-
+import pandas as pd
+import zipfile
+from pathlib import Path
 
 def clean_campaign_data():
     """
@@ -49,8 +46,57 @@ def clean_campaign_data():
 
 
     """
+    def process_client_data(df):
+        """Procesa los datos de clientes y aplica transformaciones necesarias."""
+        df = df.copy()
+        df["job"] = df["job"].str.replace(".", "", regex=False).str.replace("-", "_", regex=False)
+        df["education"] = df["education"].str.replace(".", "_", regex=False).replace("unknown", pd.NA)
+        df["credit_default"] = df["credit_default"].apply(lambda x: 1 if x == "yes" else 0)
+        df["mortgage"] = df["mortgage"].apply(lambda x: 1 if x == "yes" else 0)
+        return df
 
-    return
+    def process_campaign_data(df):
+        """Procesa los datos de campañas y aplica transformaciones necesarias."""
+        df = df.copy()
+        df["previous_outcome"] = df["previous_outcome"].apply(lambda x: 1 if x == "success" else 0)
+        df["campaign_outcome"] = df["campaign_outcome"].apply(lambda x: 1 if x == "yes" else 0)
+        df["last_contact_date"] = pd.to_datetime(df["day"].astype(str) + '-' + df["month"].astype(str) + '-2022', errors='coerce', format='%d-%b-%Y')
+        df.drop(columns=["day", "month"], inplace=True)
+        return df
+
+    input_folder = Path("files/input/")
+    output_folder = Path("files/output/")
+    output_folder.mkdir(parents=True, exist_ok=True)
+    
+    client_data = []
+    campaign_data = []
+    economics_data = []
+    
+    # Procesar cada archivo ZIP en la carpeta de entrada
+    for zip_path in input_folder.glob("*.zip"):  # Procesar archivos bank-marketing-campaing-*.csv.zip
+        with zipfile.ZipFile(zip_path, 'r') as archive:
+            for file_name in archive.namelist():
+                with archive.open(file_name) as file:
+                    df = pd.read_csv(file)
+                    print(f"Procesando archivo: {file_name}, Columnas disponibles: {list(df.columns)}")
+                    
+                    if "mortgage" in df.columns:
+                        df.rename(columns={"mortgage": "mortgage"}, inplace=True)
+                    
+                    client_columns = ["client_id", "age", "job", "marital", "education", "credit_default", "mortgage"]
+                    campaign_columns = ["client_id", "number_contacts", "contact_duration", "previous_campaign_contacts", "previous_outcome", "campaign_outcome", "day", "month"]
+                    economics_columns = ["client_id", "cons_price_idx", "euribor_three_months"]
+                    
+                    client_data.append(process_client_data(df[client_columns]))
+                    campaign_data.append(process_campaign_data(df[campaign_columns]))
+                    economics_data.append(df[economics_columns].copy())
+    
+    if client_data:
+        pd.concat(client_data).to_csv(output_folder / "client.csv", index=False)
+    if campaign_data:
+        pd.concat(campaign_data).to_csv(output_folder / "campaign.csv", index=False)
+    if economics_data:
+        pd.concat(economics_data).to_csv(output_folder / "economics.csv", index=False)
 
 
 if __name__ == "__main__":
